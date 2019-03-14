@@ -1,5 +1,5 @@
 /* comm -- compare two sorted files line by line.
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -66,6 +66,21 @@ static unsigned char delim = '\n';
 /* If true, print a summary.  */
 static bool total_option;
 
+/* If true, display output similar to diff's format.  */
+static bool indicator_option = false;
+
+/* Prepend indicator if the line only exists in the first file. */
+static const char indicator_first_file = '<';
+
+/* Prepend indicator if the line only exists in the second file. */
+static const char indicator_second_file = '>';
+
+/* Prepend indicator if the line exists in both files. */
+static const char indicator_both_file = '=';
+
+/* Number of prepend indicator to display. */
+#define INDICATOR_LEN 2
+
 /* If nonzero, check that the input is correctly ordered. */
 static enum
   {
@@ -86,6 +101,7 @@ enum
   CHECK_ORDER_OPTION = CHAR_MAX + 1,
   NOCHECK_ORDER_OPTION,
   OUTPUT_DELIMITER_OPTION,
+  INDICATOR_OPTION,
   TOTAL_OPTION
 };
 
@@ -95,6 +111,7 @@ static struct option const long_options[] =
   {"nocheck-order", no_argument, NULL, NOCHECK_ORDER_OPTION},
   {"output-delimiter", required_argument, NULL, OUTPUT_DELIMITER_OPTION},
   {"total", no_argument, NULL, TOTAL_OPTION},
+  {"indicator", no_argument, NULL, INDICATOR_OPTION},
   {"zero-terminated", no_argument, NULL, 'z'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
@@ -147,6 +164,9 @@ and column three contains lines common to both files.\n\
       fputs (_("\
   -z, --zero-terminated    line delimiter is NUL, not newline\n\
 "), stdout);
+      fputs (_("\
+  --indicator           display output similar to diff's format\n\
+"), stdout);
       fputs (HELP_OPTION_DESCRIPTION, stdout);
       fputs (VERSION_OPTION_DESCRIPTION, stdout);
       fputs (_("\
@@ -173,27 +193,49 @@ Examples:\n\
 static void
 writeline (struct linebuffer const *line, FILE *stream, int class)
 {
+
+  char separator[INDICATOR_LEN + 1] = { '\0' };
+  memcpy (separator, col_sep, strlen(col_sep) + 1);
+
   switch (class)
     {
     case 1:
+      if (indicator_option)
+        {
+          memset (separator, '\0', INDICATOR_LEN + 1);
+          memset (separator, indicator_first_file, INDICATOR_LEN);
+        }
+      fwrite (separator, 1, strlen(separator) + 1, stream);
       if (!only_file_1)
         return;
       break;
 
     case 2:
+      if (indicator_option)
+        {
+          memset (separator, '\0', INDICATOR_LEN + 1);
+          memset (separator, indicator_second_file, INDICATOR_LEN);
+        }
       if (!only_file_2)
         return;
       if (only_file_1)
-        fwrite (col_sep, 1, col_sep_len, stream);
+        fwrite (separator, 1, strlen(separator) + 1, stream);
       break;
 
     case 3:
-      if (!both)
-        return;
-      if (only_file_1)
-        fwrite (col_sep, 1, col_sep_len, stream);
-      if (only_file_2)
-        fwrite (col_sep, 1, col_sep_len, stream);
+      if (indicator_option)
+        {
+          memset (separator, '\0', INDICATOR_LEN + 1);
+          memset (separator, indicator_both_file, INDICATOR_LEN);
+          fwrite (separator, 1, strlen(separator) + 1, stream);
+        } else {
+          if (!both)
+            return;
+          if (only_file_1)
+            fwrite (separator, 1, strlen(separator) + 1, stream);
+          if (only_file_2)
+            fwrite (separator, 1, strlen(separator) + 1, stream);
+        }
       break;
     }
 
@@ -395,11 +437,20 @@ compare_files (char **infiles)
       char buf1[INT_BUFSIZE_BOUND (uintmax_t)];
       char buf2[INT_BUFSIZE_BOUND (uintmax_t)];
       char buf3[INT_BUFSIZE_BOUND (uintmax_t)];
-      printf ("%s%s%s%s%s%s%s%c",
-              umaxtostr (total[0], buf1), col_sep,
-              umaxtostr (total[1], buf2), col_sep,
-              umaxtostr (total[2], buf3), col_sep,
-              _("total"), delim);
+      if (indicator_option)
+        {
+          printf ("%c%c%s%s%c%c%s%s%c%c%s%s%s%c",
+                  indicator_first_file, indicator_first_file, umaxtostr (total[0], buf1), col_sep,
+                  indicator_second_file, indicator_second_file, umaxtostr (total[1], buf2), col_sep,
+                  indicator_both_file, indicator_both_file, umaxtostr (total[2], buf3), col_sep,
+                  _("total"), delim);
+        } else {
+          printf ("%s%s%s%s%s%s%s%c",
+                  umaxtostr (total[0], buf1), col_sep,
+                  umaxtostr (total[1], buf2), col_sep,
+                  umaxtostr (total[2], buf3), col_sep,
+                  _("total"), delim);
+        }
     }
 }
 
@@ -464,6 +515,10 @@ main (int argc, char **argv)
         total_option = true;
         break;
 
+      case INDICATOR_OPTION:
+        indicator_option = true;
+        break;
+
       case_GETOPT_HELP_CHAR;
 
       case_GETOPT_VERSION_CHAR (PROGRAM_NAME, AUTHORS);
@@ -490,10 +545,19 @@ main (int argc, char **argv)
       usage (EXIT_FAILURE);
     }
 
+  if (indicator_option)
+    {
+      printf ("%c%c%c %s\n", indicator_first_file, indicator_first_file, indicator_first_file,
+              argv[argc - 2]);
+      printf ("%c%c%c %s\n", indicator_second_file, indicator_second_file, indicator_second_file,
+              argv[argc - 1]);
+      printf ("-----\n");
+    }
+
   compare_files (argv + optind);
 
   if (issued_disorder_warning[0] || issued_disorder_warning[1])
-    die (EXIT_FAILURE, 0, _("input is not in sorted order"));
+    return EXIT_FAILURE;
   else
     return EXIT_SUCCESS;
 }

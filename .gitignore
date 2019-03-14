@@ -197,3 +197,6 @@ Makefile.in
 TAGS
 THANKS
 THANKS-to-translators
+# My ignores
+Dockerfile
+*.patch
